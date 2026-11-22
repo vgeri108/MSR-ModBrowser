@@ -1,0 +1,119 @@
+name: ModBrowser Release
+
+on:
+  push:
+    branches: [ "main" ]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.x
+
+      - name: Generate Version
+        id: version
+        shell: pwsh
+        run: |
+          $versionBase = (Get-Content "VERSION" -Raw).Trim()
+
+          if ($versionBase -notmatch '^(\d+)\.(\d+)$') {
+            throw "VERSION must contain a value like 1.0 or 1.1"
+          }
+
+          $major = [int]$Matches[1]
+          $minor = [int]$Matches[2]
+
+          $prefix = "v$major.$minor."
+
+          $tags = git ls-remote --tags --refs origin "refs/tags/$prefix*"
+
+          if ($LASTEXITCODE -ne 0) {
+            throw "Failed to retrieve Git tags."
+          }
+
+          $patches = @(
+            foreach ($tag in $tags) {
+              if ($tag -match "refs/tags/v$major\.$minor\.(\d+)$") {
+                [int]$Matches[1]
+              }
+            }
+          )
+
+          $patch = if ($patches.Count -gt 0) {
+            ($patches | Measure-Object -Maximum).Maximum + 1
+          } else {
+            1
+          }
+
+          $version = "$major.$minor.$patch"
+
+          Write-Host "Generated version: v$version"
+          "version=$version" >> $env:GITHUB_OUTPUT
+
+      - name: Download MinesweeperModAPI
+        shell: pwsh
+        run: |
+          $dllDirectory = "ModBrowser/dll"
+          $dllPath = "$dllDirectory/MinesweeperModAPI.dll"
+          $url = "https://github.com/vgeri108/MSR-ModPlatform/releases/latest/download/MinesweeperModAPI.dll"
+
+          New-Item -ItemType Directory -Force -Path $dllDirectory | Out-Null
+
+          Invoke-WebRequest -Uri $url -OutFile $dllPath
+
+          if (!(Test-Path $dllPath) -or (Get-Item $dllPath).Length -eq 0) {
+            throw "MinesweeperModAPI.dll download failed or the file is empty."
+          }
+
+          Write-Host "MinesweeperModAPI.dll downloaded successfully."
+
+      - name: Restore
+        run: dotnet restore "ModBrowser/ModBrowser.csproj"
+
+      - name: Build
+        run: >
+          dotnet build "ModBrowser/ModBrowser.csproj"
+          -c Release
+          --no-restore
+
+      - name: Prepare DLL
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force -Path release | Out-Null
+
+          Copy-Item `
+            "ModBrowser/bin/Release/net10.0/ModBrowser.dll" `
+            "release/ModBrowser.dll"
+
+      - name: Upload DLL Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ModBrowser-v${{ steps.version.outputs.version }}
+          path: release/ModBrowser.dll
+          if-no-files-found: error
+          retention-days: 14
+
+      - name: Create Draft Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: v${{ steps.version.outputs.version }}
+          name: ModBrowser v${{ steps.version.outputs.version }}
+          draft: true
+          prerelease: false
+          generate_release_notes: true
+          fail_on_unmatched_files: true
+          files: |
+            release/ModBrowser.dll

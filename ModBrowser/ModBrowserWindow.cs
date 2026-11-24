@@ -5,10 +5,17 @@ using Avalonia.Media;
 using MinesweeperModAPI.Interfaces;
 using MinesweeperModAPI.Models;
 using System;
+using System.Globalization;
+using System.IO;
 using System.Linq;
+using System.Resources;
 
 public sealed class ModBrowserWindow : Window
 {
+    private static readonly ResourceManager resources =
+        new("ModBrowser.Localization.Strings", typeof(ModBrowserWindow).Assembly);
+    private static readonly CultureInfo language = GetLanguageCulture();
+
     private readonly IModManager modManager;
     private readonly StackPanel modList = new()
     {
@@ -17,7 +24,7 @@ public sealed class ModBrowserWindow : Window
     private readonly ContentControl pageContent = new();
     private readonly TextBox searchBox = new()
     {
-        PlaceholderText = "Search mods..."
+        PlaceholderText = GetText("SearchPlaceholder")
     };
     private readonly TextBlock countText = new()
     {
@@ -29,7 +36,7 @@ public sealed class ModBrowserWindow : Window
     {
         this.modManager = modManager;
 
-        Title = "Mod Browser";
+        Title = GetText("Title");
         Width = 800;
         Height = 550;
         MinWidth = 600;
@@ -40,7 +47,7 @@ public sealed class ModBrowserWindow : Window
 
         var refreshButton = new Button
         {
-            Content = "Refresh"
+            Content = GetText("Refresh")
         };
         refreshButton.Click += (_, _) => RefreshMods();
 
@@ -66,7 +73,7 @@ public sealed class ModBrowserWindow : Window
                     {
                         new TextBlock
                         {
-                            Text = "Installed",
+                            Text = GetText("Installed"),
                             FontSize = 25,
                             FontWeight = FontWeight.Bold
                         },
@@ -87,21 +94,21 @@ public sealed class ModBrowserWindow : Window
 
         var installedButton = new Button
         {
-            Content = "Installed",
+            Content = GetText("Installed"),
             HorizontalContentAlignment = HorizontalAlignment.Left
         };
         installedButton.Click += (_, _) => pageContent.Content = installedPage;
 
         var discoverButton = new Button
         {
-            Content = "Discover",
+            Content = GetText("Discover"),
             HorizontalContentAlignment = HorizontalAlignment.Left
         };
         discoverButton.Click += (_, _) => ShowComingSoon();
 
         var settingsButton = new Button
         {
-            Content = "Settings",
+            Content = GetText("Settings"),
             HorizontalContentAlignment = HorizontalAlignment.Left
         };
         settingsButton.Click += (_, _) => ShowComingSoon();
@@ -118,7 +125,7 @@ public sealed class ModBrowserWindow : Window
                 {
                     new TextBlock
                     {
-                        Text = "Menu",
+                        Text = GetText("Menu"),
                         FontSize = 18,
                         FontWeight = FontWeight.Bold,
                         Margin = new Thickness(4, 4, 4, 12)
@@ -154,7 +161,7 @@ public sealed class ModBrowserWindow : Window
             {
                 new TextBlock
                 {
-                    Text = "Coming soon",
+                    Text = GetText("ComingSoon"),
                     FontSize = 24,
                     Foreground = Brushes.Gray,
                     HorizontalAlignment = HorizontalAlignment.Center,
@@ -183,13 +190,16 @@ public sealed class ModBrowserWindow : Window
         foreach (var mod in mods)
             modList.Children.Add(CreateModCard(mod));
 
-        countText.Text = $"{mods.Count} mods";
+        countText.Text = string.Format(
+            language,
+            GetText(mods.Count == 1 ? "OneModCount" : "ManyModsCount"),
+            mods.Count);
 
         if (mods.Count == 0)
         {
             modList.Children.Add(new TextBlock
             {
-                Text = "No mods found.",
+                Text = GetText("NoModsFound"),
                 HorizontalAlignment = HorizontalAlignment.Center,
                 Foreground = Brushes.Gray,
                 Margin = new Thickness(15)
@@ -228,11 +238,11 @@ public sealed class ModBrowserWindow : Window
             IsVisible = false,
             Children =
             {
-                CreateDetail("ID", info.Id),
-                CreateDetail("Version", info.Version),
-                CreateDetail("Author", info.Author),
-                CreateDetail("Licence", info.LicenceType),
-                CreateDetail("Licence information", info.LicenceInfo)
+                CreateDetail(GetText("Id"), info.Id),
+                CreateDetail(GetText("Version"), info.Version),
+                CreateDetail(GetText("Author"), info.Author),
+                CreateDetail(GetText("Licence"), info.LicenceType),
+                CreateDetail(GetText("LicenceInformation"), info.LicenceInfo, isLink: true)
             }
         };
 
@@ -252,7 +262,7 @@ public sealed class ModBrowserWindow : Window
         return card;
     }
 
-    private static Control CreateDetail(string label, string value)
+    private static Control CreateDetail(string label, string value, bool isLink = false)
     {
         var valueText = new TextBlock
         {
@@ -261,8 +271,7 @@ public sealed class ModBrowserWindow : Window
             TextWrapping = TextWrapping.Wrap
         };
 
-        if (label == "Licence information" &&
-            Uri.TryCreate(value, UriKind.Absolute, out Uri? uri))
+        if (isLink && Uri.TryCreate(value, UriKind.Absolute, out Uri? uri))
         {
             valueText.Foreground = Brushes.CornflowerBlue;
             valueText.PointerEntered += (_, _) =>
@@ -302,5 +311,34 @@ public sealed class ModBrowserWindow : Window
                 valueText
             }
         };
+    }
+
+    private static string GetText(string name) =>
+        resources.GetString(name, language) ??
+        throw new InvalidOperationException($"Missing localization string '{name}'.");
+
+    private static CultureInfo GetLanguageCulture()
+    {
+        string applicationData = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
+        if (string.IsNullOrWhiteSpace(applicationData))
+        {
+            throw new InvalidOperationException("The local application data directory is unavailable.");
+        }
+
+        string settingsPath = Path.Combine(applicationData, "MinesweeperReborn", "language.txt");
+        string preference = File.Exists(settingsPath)
+            ? File.ReadAllText(settingsPath).Trim()
+            : "System";
+
+        if (preference.Equals("English", StringComparison.OrdinalIgnoreCase))
+            return CultureInfo.GetCultureInfo("en-US");
+        if (preference.Equals("Hungarian", StringComparison.OrdinalIgnoreCase))
+            return CultureInfo.GetCultureInfo("hu-HU");
+        if (!preference.Equals("System", StringComparison.OrdinalIgnoreCase))
+            throw new InvalidDataException($"Invalid language preference in '{settingsPath}'.");
+
+        return CultureInfo.CurrentUICulture.TwoLetterISOLanguageName == "en"
+            ? CultureInfo.GetCultureInfo("en-US")
+            : CultureInfo.GetCultureInfo("hu-HU");
     }
 }

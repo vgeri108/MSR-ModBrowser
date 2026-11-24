@@ -13,7 +13,7 @@ public sealed class ModBrowser : Mod
     {
         Id = "mod.vgeri.modbrowser",
         Name = "Mod Browser",
-        Version = "1.0.2",
+        Version = "1.0.3",
         Author = "vgeri108",
         LicenceType = "MIT",
         LicenceInfo = "https://opensource.org/license/mit/"

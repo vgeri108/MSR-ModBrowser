@@ -254,6 +254,41 @@ public sealed class ModBrowserWindow : Window
 
     private static Control CreateDetail(string label, string value)
     {
+        var valueText = new TextBlock
+        {
+            Text = value,
+            Foreground = Brushes.Gray,
+            TextWrapping = TextWrapping.Wrap
+        };
+
+        if (label == "Licence information" &&
+            Uri.TryCreate(value, UriKind.Absolute, out Uri? uri))
+        {
+            valueText.Foreground = Brushes.CornflowerBlue;
+            valueText.PointerEntered += (_, _) =>
+            {
+                valueText.TextDecorations = new TextDecorationCollection
+                {
+                    new TextDecoration
+                    {
+                        Location = TextDecorationLocation.Underline
+                    }
+                };
+            };
+            valueText.PointerExited += (_, _) =>
+            {
+                valueText.TextDecorations = null;
+            };
+            valueText.PointerPressed += async (_, e) =>
+            {
+                e.Handled = true;
+
+                var topLevel = TopLevel.GetTopLevel(valueText);
+                if (topLevel is not null)
+                    await topLevel.Launcher.LaunchUriAsync(uri);
+            };
+        }
+
         return new StackPanel
         {
             Spacing = 3,
@@ -264,12 +299,7 @@ public sealed class ModBrowserWindow : Window
                     Text = label,
                     FontWeight = FontWeight.Bold
                 },
-                new TextBlock
-                {
-                    Text = value,
-                    Foreground = Brushes.Gray,
-                    TextWrapping = TextWrapping.Wrap
-                }
+                valueText
             }
         };
     }
